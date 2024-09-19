@@ -2,9 +2,9 @@ import os
 import torch
 import argparse
 from transformers import T5Tokenizer
-from utlis import EXPDataLoader, ExpBatchify, now_time, ids2tokens, bleu_score, rouge_score
+from module import Solomon
+from utlis import rouge_score, bleu_score, ExpDataLoader, ExpBatchify, now_time, ids2tokens
 
-###############################################
 
 parser = argparse.ArgumentParser(description='POD (PrOmpt Distillation)')
 parser.add_argument('--data_dir', type=str, default="./data/beauty/",
@@ -29,7 +29,6 @@ parser.add_argument('--exp_len', type=int, default=20,
                     help='the maximum length of an explanation')
 args = parser.parse_args()
 
-
 if args.model_version == 1:
     model_version = 't5-base'
 elif args.model_version == 2:
@@ -49,72 +48,76 @@ print('-' * 40 + 'ARGUMENTS' + '-' * 40)
 if torch.cuda.is_available():
     if not args.cuda:
         print(now_time() + 'WARNING: You have a CUDA device, so you should probably run with --cuda')
-# device = torch.device('cuda' if args.cuda else 'cpu')
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+print("CUDA: ", torch.cuda.is_available(), sep="")
+device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
 if not os.path.exists(args.checkpoint):
     os.makedirs(args.checkpoint)
 model_path = os.path.join(args.checkpoint, 'model.pt')
+print(model_path)
 prediction_path = os.path.join(args.checkpoint, args.outf)
 
-###############################################
+###############################################################################
+# Load data
+###############################################################################
 
-print(now_time() + 'Loading data...')
+print(now_time() + 'Loading data')
 tokenizer = T5Tokenizer.from_pretrained(model_version)
-exp_corpus = EXPDataLoader(args.data_dir)
+exp_corpus = ExpDataLoader(args.data_dir)
 exp_iterator = ExpBatchify(exp_corpus.test, tokenizer, args.exp_len, args.batch_size)
 
-###############################################
+###############################################################################
+# Test the model
+###############################################################################
 
-with open(model_path, 'rb') as f:
-    model = torch.load(f).to(device)
-    
 
 def generate():
+    # Turn on evaluation mode which disables dropout.
     model.eval()
     idss_predict = []
     with torch.no_grad():
         while True:
-            task, source, source_mask, whole_word, _ = exp_iterator.next_batch()
-            task = task.to(device)
-            source = source.to(device)
+            task, source, source_mask, whole_word, _ = exp_iterator.next_batch_test()
+            task = task.to(device)  # (batch_size,)
+            source = source.to(device)  # (batch_size, seq_len)
             source_mask = source_mask.to(device)
             whole_word = whole_word.to(device)
-            print("Error start before beam")
+
             beam_outputs = model.my_beam_search(task, source, whole_word, source_mask,
-                                                min_length=args.min_len, num_beams=args.num_beams,
-                                                num_beam_groups=args.num_beam_groups, 
-                                                num_return_sequences=1)
-            print("Actually no error")
-            idss_predict.append(beam_outputs.tolist())
-            
+                                             min_length=args.min_len,
+                                             num_beams=args.num_beams,
+                                             num_beam_groups=args.num_beam_groups,
+                                             num_return_sequences=1
+                                             )
+
+            idss_predict.extend(beam_outputs.tolist())
+
             if exp_iterator.step == exp_iterator.total_step:
                 break
     return idss_predict
 
 
+# Load the best saved model.
+with open(model_path, 'rb') as f:
+    model = torch.load(f).to(device)
 
-print(now_time() + "Generating explanations...")
+print(now_time() + 'Generating text')
 idss_predicted = generate()
-print(now_time() + "Evaluation")
-tokens_test = [ids2tokens(ids, tokenizer) for ids in exp_iterator.target_seq.to_list()]
+print(now_time() + 'Evaluation')
+tokens_test = [ids2tokens(ids, tokenizer) for ids in exp_iterator.target_seq.tolist()]
 tokens_predict = [ids2tokens(ids, tokenizer) for ids in idss_predicted]
-BLEU1 = bleu_score(tokens_test, tokens_predict, n_gram=4, smooth=False)
-print(now_time() + "BLEU1: {:.4f}".format(BLEU1))
+BLEU1 = bleu_score(tokens_test, tokens_predict, n_gram=1, smooth=False)
+print(now_time() + 'BLEU-1 {:7.4f}'.format(BLEU1))
 BLEU4 = bleu_score(tokens_test, tokens_predict, n_gram=4, smooth=False)
 print(now_time() + 'BLEU-4 {:7.4f}'.format(BLEU4))
 text_test = [' '.join(tokens) for tokens in tokens_test]
 text_predict = [' '.join(tokens) for tokens in tokens_predict]
-ROUGE = rouge_score(text_test, text_predict)
- 
+ROUGE = rouge_score(text_test, text_predict)  # a dictionary
 for (k, v) in ROUGE.items():
-    print(now_time() + '{}: {:.4f}'.format(k, v))
-    
+    print(now_time() + '{} {:7.4f}'.format(k, v))
 text_out = ''
 for (real, fake) in zip(text_test, text_predict):
     text_out += '{}\n{}\n\n'.format(real, fake)
 with open(prediction_path, 'w', encoding='utf-8') as f:
     f.write(text_out)
-    
-print(now_time() + "Generated text save to {}".format(prediction_path))
+print(now_time() + 'Generated text saved to ({})'.format(prediction_path))

@@ -50,48 +50,66 @@ def evaluate_hr(user2item_test, user2items_top, top_k):
         total += count / len(ground_truth)
         
     return total / len(user2item_test)
-"""
+
+
 class ExpDataLoader:
     def __init__(self, data_dir):
-        with open(data_dir + 'explanation.json', 'r') as f:
+        with open(data_dir + "explanation.json", "r") as f:
             self.exp_data = json.load(f)
             
         self.train = self.exp_data['train']
-        self.val = self.exp_data['val']
-        self.test = self.exp_data['test']
-"""
-
-class EXPDataLoader:
-    def __init__(self, data_dir):
-        with open(data_dir + 'explanation.json', 'r') as f:
-            self.exp_data = json.load(f)
-
-        self.train = self.exp_data['train']
         self.valid = self.exp_data['val']
         self.test = self.exp_data['test']
+        
 
-
-class SEQDataLoader:
+class SeqDataLoader:
     def __init__(self, data_dir):
         self.user2items_positive = {}
-        with open(data_dir + 'sequential.txt', 'r') as f:
+        with open(data_dir + "sequential.txt", "r") as f:
             for line in f.readlines():
-                user, items = line.strip().split(' ', 1)
+                user, items = line.strip().split(" ", 1)
                 self.user2items_positive[int(user)] = items.split(' ')
-
+                
         self.user2items_negative = {}
-        with open(data_dir + 'negative.txt', 'r') as f:
+        with open(data_dir + "negative.txt", 'r') as f:
             for line in f.readlines():
-                user, items = line.strip().split(' ', 1)
+                user, items = line.strip().split(" ", 1)
                 self.user2items_negative[int(user)] = items.split(' ')
-
-        with open(data_dir + 'datamaps.json', 'r') as f:
+                
+        with open(data_dir + 'datamaps.json', 'r') as f: 
             datamaps = json.load(f)
         self.id2user = datamaps['id2user']
         self.id2item = datamaps['id2item']
 
 
-class EXPSampler:
+def compute_whole_word_id(seq_batch, tokenizer, max_len):
+    whole_word_ids = []
+    for seq in seq_batch:
+        token_list = tokenizer.tokenize(seq)
+        start_indices = []
+        for idx, token in enumerate(token_list):
+            if token == '_':
+                start_indices.append(idx - 1) # user_xx or item_xx, starts before '_'
+        end_indices = []
+        for start in start_indices:
+            mover = start + 2
+            while mover < len(token_list) and token_list[mover].isdigit():
+                mover += 1
+            end_indices.append(mover)
+        whole_word_id = [0] * len(token_list) # padding
+        for i, (start, end) in enumerate(zip(start_indices, end_indices)):
+            whole_word_id[start:end] = [i + 1] * (end - start) # leave 0 as padding token
+        whole_word_ids.append(whole_word_id)
+        
+    # make the batch of the same length
+    padded_whole_word_ids = []
+    for whole_word_id in whole_word_ids:
+        padded_whole_word_ids.append(whole_word_id + [0] * (max_len - len(whole_word_id)))
+    
+    return padded_whole_word_ids
+
+
+class ExpSampler:
     def __init__(self, exp_data):
         self.task_id = 0
         self.exp_data = exp_data
@@ -104,10 +122,10 @@ class EXPSampler:
             self.step = 0
             random.shuffle(self.index_list)
                 
-    def sample(self, num): 
-        task = [self.task_id] * num 
+    def sample(self, num):
+        task = [self.task_id] * num
         inputs, outputs = [], []
-        for _ in range(num): 
+        for _ in range(num):
             self.check_step()
             idx = self.index_list[self.step]
             record = self.exp_data[idx]
@@ -118,7 +136,7 @@ class EXPSampler:
         return task, inputs, outputs
         
         
-class SEQSampler: 
+class SeqSampler: 
     def __init__(self, user2items_pos):
         self.task_id = 1
         self.max_seq_len = 21
@@ -194,7 +212,7 @@ class TopNSampler:
             i = random.randint(1, self.item_num)
             if i not in items_pos:
                 item_set.add(i)
-        return [str(i) for i in item_set]
+        return [str(item) for item in item_set]
         
     
     def sample(self, num):
@@ -217,38 +235,10 @@ class TopNSampler:
         return task, inputs, outputs
     
     
-def compute_whole_word_id(input_list, tokenizer, max_len):
-    whole_word_ids = []
-    for seq in input_list: 
-        token_list = tokenizer.tokenize(seq)
-        start_indices = []
-        for idx, token in enumerate(token_list):
-            if token == '_':
-                start_indices.append(idx - 1) # user_xx, item_xx starts before _
-            
-        end_indices = []
-        for start in start_indices:
-            mover = start + 2
-            while mover < len(token_list) and token_list[mover].isdigit():
-                mover += 1
-            end_indices.append(mover)
-        whole_word_id = [0] * len(token_list) # padding
-        for i, (start, end) in enumerate(zip(start_indices, end_indices)):
-            whole_word_id[start:end] = [i + 1] * (end - start)
-        whole_word_ids.append(whole_word_id)
-        
-        # make the batch of same length
-        padded_whole_word_ids = []
-        for whole_word_id in whole_word_ids:
-            padded_whole_word_ids.append(whole_word_id + [0] * (max_len - len(whole_word_id)))
-            
-        return padded_whole_word_ids
-        
-        
 class TrainBatchify:
     def __init__(self, exp_data, user2items_pos, negative_num, item_num, tokenizer, exp_len, batch_size):
-        self.exp_sampler = EXPSampler(exp_data)
-        self.seq_sampler = SEQSampler(user2items_pos)
+        self.exp_sampler = ExpSampler(exp_data)
+        self.seq_sampler = SeqSampler(user2items_pos)
         self.topn_sampler = TopNSampler(user2items_pos, negative_num, item_num)
         self.tokenizer = tokenizer
         self.exp_len = exp_len
@@ -303,7 +293,7 @@ class ExpBatchify:
         self.target_seq = encoded_target['input_ids'][:, :exp_len].contiguous()
         self.batch_size = batch_size
         self.sample_num = len(exp_data)
-        self.total_step = int(math.ceil(self.sample_num / batch_size))
+        self.total_step = int(math.ceil(self.sample_num / self.batch_size))
         self.step = 0
         
         
@@ -332,7 +322,7 @@ class ExpBatchify:
     
     
 class SeqBatchify:
-    def __init__(self, user2items_pos, tokenizer,batch_size):
+    def __init__(self, user2items_pos, tokenizer, batch_size):
         self.task_id = 1
         self.max_seq_len = 21
         self.user_template = 'user_{} item_{}'
@@ -344,7 +334,7 @@ class SeqBatchify:
         
         self.batch_size = batch_size
         self.sample_num = len(self.user_list)
-        self.total_step = int(math.ceil(self.sample_num / batch_size)) 
+        self.total_step = int(math.ceil(self.sample_num / self.batch_size)) 
         self.step = 0
         
         

@@ -4,7 +4,7 @@ from transformers import T5Tokenizer
 import argparse
 from module import Solomon
 import os
-from utlis import TrainBatchify, EXPDataLoader, now_time, SEQDataLoader, ExpBatchify, SeqBatchify, TopNBatchify
+from utlis import TrainBatchify, ExpDataLoader, now_time, SeqDataLoader, ExpBatchify, SeqBatchify, TopNBatchify
 
 #* #################################################################
 
@@ -32,8 +32,8 @@ model_path = os.path.join(data_name, "model.pt")
 
 print(now_time() + "Loading data...")
 tokenizer = T5Tokenizer.from_pretrained(model_version)
-exp_corpus = EXPDataLoader(data_name)
-seq_corpus = SEQDataLoader(data_name)
+exp_corpus = ExpDataLoader(data_name)
+seq_corpus = SeqDataLoader(data_name)
 nitem = len(seq_corpus.id2item)
 all_iterator = TrainBatchify(exp_corpus.train, seq_corpus.user2items_positive, negative_num=negative_num, item_num=nitem, tokenizer=tokenizer, exp_len=exp_len, batch_size=batch_size)
 exp_iterator = ExpBatchify(exp_corpus.train, tokenizer=tokenizer, exp_len=exp_len, batch_size=batch_size)
