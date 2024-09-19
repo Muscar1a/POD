@@ -22,21 +22,13 @@ parser.add_argument('--top_n', type=int, default=10,
                     help='number of items to predict')
 args = parser.parse_args()
 
-"""
-data_dir = "./data/sports/"
 model_version = "t5-small"
-batch_size = 32
-checkpoint = "./checkpoint/sports/"
-num_beams = 20
-top_n = 10
-"""
 
 print('-' * 40 + 'ARGUMENTS' + '-' * 40)
 for arg in vars(args):
     print('{:40} {}'.format(arg, getattr(args, arg)))
 print('-' * 40 + 'ARGUMENTS' + '-' * 40)
 
-model_version = "t5-small"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

@@ -29,16 +29,7 @@ parser.add_argument('--exp_len', type=int, default=20,
                     help='the maximum length of an explanation')
 args = parser.parse_args()
 
-if args.model_version == 1:
-    model_version = 't5-base'
-elif args.model_version == 2:
-    model_version = 't5-large'
-elif args.model_version == 3:
-    model_version = 't5-3b'
-elif args.model_version == 4:
-    model_version = 't5-11b'
-else:
-    model_version = 't5-small'
+model_version = "t5-small"
 
 print('-' * 40 + 'ARGUMENTS' + '-' * 40)
 for arg in vars(args):

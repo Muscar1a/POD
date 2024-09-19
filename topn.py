@@ -3,7 +3,7 @@ import torch
 import random
 import argparse
 from transformers import T5Tokenizer
-from utils import SeqDataLoader, TopNBatchify, now_time, evaluate_ndcg, evaluate_hr
+from utlis import SeqDataLoader, TopNBatchify, now_time, evaluate_ndcg, evaluate_hr
 
 
 parser = argparse.ArgumentParser(description='POD (PrOmpt Distillation)')
@@ -25,16 +25,7 @@ parser.add_argument('--top_n', type=int, default=10,
                     help='number of items to predict')
 args = parser.parse_args()
 
-if args.model_version == 1:
-    model_version = 't5-base'
-elif args.model_version == 2:
-    model_version = 't5-large'
-elif args.model_version == 3:
-    model_version = 't5-3b'
-elif args.model_version == 4:
-    model_version = 't5-11b'
-else:
-    model_version = 't5-small'
+model_version = "t5_small"
 
 print('-' * 40 + 'ARGUMENTS' + '-' * 40)
 for arg in vars(args):
